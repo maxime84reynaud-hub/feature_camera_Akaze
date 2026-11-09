@@ -19,10 +19,11 @@
 
 struct ResultatDetection {
     bool carteTrouvee = false;
-    double x = 0.0;
-    double y = 0.0;
-    double thetaDeg = 0.0;
-    int nbFeaturesReconnues = 0;
+    double x = 0.0;                  // Position X du centre de la carte dans l'image caméra
+    double y = 0.0;                  // Position Y du centre de la carte dans l'image caméra
+    double thetaDeg = 0.0;           // Orientation Theta (en degrés)
+    int nbMatchesBruts = 0;          // NOUVEAU : Features appariées avant filtrage géométrique
+    int nbFeaturesReconnues = 0;     // Inliers validés par RANSAC
     std::vector<cv::KeyPoint> inliersCamera;
     std::vector<cv::Point2f> coinsProjetes;
 };

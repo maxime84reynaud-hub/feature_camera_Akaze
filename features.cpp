@@ -70,7 +70,7 @@ bool DetecteurAKAZE::chargerCarteReference(const std::string& fichierYml) {
     fs["height"] >> refHeight_;
     fs["keypoints"] >> refKeypoints_;
     fs["descriptors"] >> refDescriptors_;
-    fs.release();<
+    fs.release();
 
     return !refDescriptors_.empty() && refKeypoints_.size() >= 8;
 }
@@ -104,6 +104,8 @@ ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat
         }
     }
 
+    res.nbMatchesBruts = static_cast<int>(bonsMatches.size());
+    
     // 2. Filtrage géométrique RANSAC et calcul de l'homographie
     if (bonsMatches.size() >= 8) {
         std::vector<uchar> inliersMask;
