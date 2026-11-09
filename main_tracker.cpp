@@ -9,7 +9,7 @@ bool ouvrirCamera(cv::VideoCapture& cap, int index = 0) {
     return cap.isOpened();
 }
 
-// Dessine la grille de coordonnées graduée et les instruments de vérification
+// Dessine la grille de coordonnées graduée, les compteurs de features et les alertes de mouvement
 void dessinerGrilleEtHUD(cv::Mat& img, const ResultatDetection& res, int totalRefFeatures, bool afficherGrille) {
     int w = img.cols;
     int h = img.rows;
@@ -48,7 +48,7 @@ void dessinerGrilleEtHUD(cv::Mat& img, const ResultatDetection& res, int totalRe
 
     // 2. Si la carte est trouvée : lignes de projection (X, Y) et rapporteur d'angle Theta
     if (res.carteTrouvee) {
-        int px = static_cast<int>( std::round(res.x));
+        int px = static_cast<int>(std::round(res.x));
         int py = static_cast<int>(std::round(res.y));
 
         // Lignes de visée reliant la cible aux graduations X et Y
@@ -70,29 +70,31 @@ void dessinerGrilleEtHUD(cv::Mat& img, const ResultatDetection& res, int totalRe
     cv::rectangle(overlay, cv::Point(0, 0), cv::Point(w, 80), cv::Scalar(20, 20, 20), -1);
     cv::addWeighted(overlay, 0.75, img, 0.25, 0, img);
 
-    // Ligne 1 : Compteur de features en direct
+    // Ligne 1 : Compteur de features en direct + Points rouges de mouvement
     double ratioInliers = (res.nbMatchesBruts > 0)
                               ? (100.0 * res.nbFeaturesReconnues / res.nbMatchesBruts)
                               : 0.0;
+    std::string alerteMouvement = (res.nbPointsMouvement > 30) ? " [OBSTACLE EN MOUVEMENT]" : "";
     std::string txtFeatures = cv::format(
-        "Features reconnues (Inliers) : %d / %d carte  |  Bruts : %d (Fiabilite RANSAC : %.0f%%)",
-        res.nbFeaturesReconnues, totalRefFeatures, res.nbMatchesBruts, ratioInliers
+        "Inliers: %d/%d (RANSAC %.0f%%) | Pts Rouges (Mouv): %d%s",
+        res.nbFeaturesReconnues, totalRefFeatures, ratioInliers, res.nbPointsMouvement, alerteMouvement.c_str()
     );
+    cv::Scalar couleurLigne1 = (res.nbPointsMouvement > 30) ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0);
     cv::putText(img, txtFeatures, cv::Point(12, 26),
-                cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+                cv::FONT_HERSHEY_SIMPLEX, 0.52, couleurLigne1, 1, cv::LINE_AA);
 
     // Ligne 2 : Coordonnées X, Y, Theta et commandes
     if (res.carteTrouvee) {
         std::string txtPose = cv::format(
-            "POSE DETECTEE ->  X: %6.1f px  |  Y: %6.1f px  |  Theta: %+6.1f deg   [g] Grille [r] Ref",
+            "POSE -> X: %5.1f px | Y: %5.1f px | Theta: %+5.1f deg   [g] Grille [r] Ref",
             res.x, res.y, res.thetaDeg
         );
         cv::putText(img, txtPose, cv::Point(12, 58),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.58, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
     } else {
-        std::string txtAttente = "POSE : Recherche de la carte (min 8 inliers requis)...   [g] Grille | [r] Capturer Ref";
+        std::string txtAttente = "POSE : Recherche de la carte (min 8 inliers)...  [g] Grille | [r] Capturer Ref";
         cv::putText(img, txtAttente, cv::Point(12, 58),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 165, 255), 1, cv::LINE_AA);
+                    cv::FONT_HERSHEY_SIMPLEX, 0.52, cv::Scalar(0, 165, 255), 1, cv::LINE_AA);
     }
 }
 
@@ -121,9 +123,10 @@ int main() {
             res = detecteur.analyserFrame(frame, affichage);
         } else {
             affichage = frame.clone();
+            detecteur.detecterMouvement(frame, affichage, res, 25.0);
         }
 
-        // Superposition de la grille graduée et des compteurs en direct
+        // Superposition de la grille graduée, de la pose et des compteurs en direct
         dessinerGrilleEtHUD(affichage, res, detecteur.getNbFeaturesCarte(), afficherGrille);
 
         cv::imshow("Robot Temps Reel - Verification Grille & Features AKAZE", affichage);

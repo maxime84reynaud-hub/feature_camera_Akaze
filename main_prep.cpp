@@ -2,7 +2,6 @@
 #include <iostream>
 #include <filesystem>
 
-// Fonction robuste pour ouvrir la webcam sous Windows et Linux
 bool ouvrirCamera(cv::VideoCapture& cap, int index = 0) {
     cap.open(index, cv::CAP_ANY);
     if (cap.isOpened()) return true;
@@ -15,27 +14,29 @@ int main() {
     std::string cheminImage = (dossierCourant / "reference.png").string();
     std::string fichierYml = (dossierCourant / "carte_features.yml").string();
 
-    std::cout << "=== OUTIL DE PREPARATION DE LA CARTE ===" << std::endl;
-    std::cout << "Dossier de travail : " << dossierCourant.string() << std::endl;
-
     DetecteurAKAZE detecteur(0.001f);
     cv::Mat imageRef = cv::imread(cheminImage);
 
+    // Si une image existe déjà, on propose de la conserver ou d'appuyer sur 'c' pour recapturer
     if (!imageRef.empty()) {
         std::cout << "[OK] Image existante trouvee : " << cheminImage << std::endl;
-        std::cout << "Appuyez sur [c] sur la fenetre pour recapturer via webcam, ou toute autre touche pour valider." << std::endl;
+        cv::imshow("Image actuelle - [c] pour recapturer | [Autre touche] pour valider", imageRef);
+        char choix = static_cast<char>(cv::waitKey(0));
+        cv::destroyAllWindows();
+        if (choix == 'c' || choix == 'C') {
+            imageRef.release(); // Vide l'image pour déclencher la capture webcam ci-dessous
+        }
     }
 
-    // Si aucune image n'existe, on ouvre la caméra directement
+    // Si aucune référence n'est chargée (ou si l'utilisateur a appuyé sur 'c'), on ouvre la webcam
     if (imageRef.empty()) {
-        std::cout << "Aucune 'reference.png' trouvee. Ouverture de la webcam..." << std::endl;
         cv::VideoCapture cap;
         if (!ouvrirCamera(cap, 0)) {
-            std::cerr << "[ERREUR] Impossible d'ouvrir la webcam (verifiez qu'aucune autre fenetre ne l'utilise)." << std::endl;
+            std::cerr << "[ERREUR] Webcam introuvable" << std::endl;
             return -1;
         }
 
-        std::cout << "-> Placez votre carte devant la camera et appuyez sur [ESPACE] (ou 'r') pour capturer." << std::endl;
+        std::cout << "Appuyez sur [ESPACE] ou [r] sur la fenetre video pour capturer." << std::endl;
         cv::Mat frame;
         while (true) {
             cap >> frame;
@@ -50,9 +51,9 @@ int main() {
             if (key == ' ' || key == 'r') {
                 imageRef = frame.clone();
                 if (cv::imwrite(cheminImage, imageRef)) {
-                    std::cout << "[SUCCES] Image bien enregistree sous : " << cheminImage << std::endl;
+                    std::cout << "[SUCCES] Image enregistree sous : " << cheminImage << std::endl;
                 } else {
-                    std::cerr << "[ERREUR] Echec de l'enregistrement de l'image !" << std::endl;
+                    std::cerr << "[ERREUR] Echec enregistrement" << std::endl;
                 }
                 break;
             } else if (key == 27 || key == 'q') {
@@ -63,15 +64,15 @@ int main() {
         cv::destroyAllWindows();
     }
 
-    // Extraction des features et génération du fichier YML
+    // Extraction des features et génération du fichier carte_features.yml
     cv::Mat imageVisu;
     if (detecteur.genererCarteReference(imageRef, fichierYml, imageVisu)) {
         std::cout << "[SUCCES] " << detecteur.getNbFeaturesCarte()
-                  << " features extraites et sauvegardees dans : " << fichierYml << std::endl;
-        cv::imshow("Features AKAZE enregistrees (Appuyez sur une touche pour fermer)", imageVisu);
+                  << " features sauvegardees dans : " << fichierYml << std::endl;
+        cv::imshow("Features enregistrees (Appuyez sur une touche pour fermer)", imageVisu);
         cv::waitKey(0);
     } else {
-        std::cerr << "[ERREUR] Impossible de generer le fichier YML (pas assez de details sur l'image)." << std::endl;
+        std::cerr << "[ERREUR] Impossible de generer le fichier YML (pas assez de features)." << std::endl;
     }
 
     return 0;

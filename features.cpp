@@ -5,8 +5,8 @@
 DetecteurAKAZE::DetecteurAKAZE(float seuilAKAZE)
     : matcher_(cv::NORM_HAMMING) {
     clahe_ = cv::createCLAHE(2.0, cv::Size(8, 8));
-    akaze_ = AkazeDetector::create(
-        AkazeDetector::DESCRIPTOR_MLDB,
+    akaze_ = AKAZEAlgo::create(
+        AKAZEAlgo::DESCRIPTOR_MLDB,
         0, 3,
         seuilAKAZE,
         4, 4
@@ -75,12 +75,18 @@ bool DetecteurAKAZE::chargerCarteReference(const std::string& fichierYml) {
     return !refDescriptors_.empty() && refKeypoints_.size() >= 8;
 }
 
-ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat& affichageOut) const {
+ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat& affichageOut) {
     ResultatDetection res;
     affichageOut = frameBGR.clone();
 
-    if (refDescriptors_.empty() || frameBGR.empty()) return res;
+    if (frameBGR.empty()) return res;
 
+    // 1. Comparaison entre 2 images consécutives (trace les points rouges sur ce qui bouge)
+    detecterMouvement(frameBGR, affichageOut, res, 25.0);
+
+    if (refDescriptors_.empty()) return res;
+
+    // 2. Détection AKAZE sur la frame courante
     cv::Mat framePretraitee = pretraiter(frameBGR);
     std::vector<cv::KeyPoint> frameKeypoints;
     cv::Mat frameDescriptors;
@@ -88,7 +94,7 @@ ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat
 
     if (frameDescriptors.empty() || frameKeypoints.size() < 4) return res;
 
-    // 1. Appariement k-NN (k = 2) et test du ratio de Lowe
+    // 3. Appariement k-NN (k = 2) et test du ratio de Lowe
     std::vector<std::vector<cv::DMatch>> knnMatches;
     matcher_.knnMatch(refDescriptors_, frameDescriptors, knnMatches, 2);
 
@@ -105,8 +111,8 @@ ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat
     }
 
     res.nbMatchesBruts = static_cast<int>(bonsMatches.size());
-    
-    // 2. Filtrage géométrique RANSAC et calcul de l'homographie
+
+    // 4. Filtrage géométrique RANSAC et calcul de l'homographie
     if (bonsMatches.size() >= 8) {
         std::vector<uchar> inliersMask;
         cv::Mat H = cv::findHomography(ptsRef, ptsCamera, cv::RANSAC, 3.0, inliersMask);
@@ -118,7 +124,7 @@ ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat
         }
         res.nbFeaturesReconnues = static_cast<int>(res.inliersCamera.size());
 
-        // Dessin des features reconnues sur le retour caméra
+        // Dessin des features reconnues sur le retour caméra (en vert)
         cv::drawKeypoints(
             affichageOut,
             res.inliersCamera,
@@ -163,4 +169,49 @@ ResultatDetection DetecteurAKAZE::analyserFrame(const cv::Mat& frameBGR, cv::Mat
     }
 
     return res;
+}
+
+void DetecteurAKAZE::detecterMouvement(const cv::Mat& frameBGR, cv::Mat& affichageOut, ResultatDetection& res, double seuilDiff) {
+    cv::Mat grisActuel;
+    if (frameBGR.channels() == 3) {
+        cv::cvtColor(frameBGR, grisActuel, cv::COLOR_BGR2GRAY);
+    } else {
+        grisActuel = frameBGR.clone();
+    }
+
+    // Flou gaussien léger (5x5) pour ignorer le grain naturel de la webcam
+    cv::GaussianBlur(grisActuel, grisActuel, cv::Size(5, 5), 0);
+
+    // Si on a déjà une image précédente de même dimension, on les compare
+    if (!prevFrameGris_.empty() && prevFrameGris_.size() == grisActuel.size()) {
+        cv::Mat diff, masqueMouvement;
+
+        // 1. Différence absolue pixel par pixel entre l'image t-1 et l'image t
+        cv::absdiff(prevFrameGris_, grisActuel, diff);
+
+        // 2. Seuillage pour ne garder que les vrais changements d'intensité (> seuilDiff)
+        cv::threshold(diff, masqueMouvement, seuilDiff, 255, cv::THRESH_BINARY);
+
+        // 3. Ouverture morphologique pour éliminer les pixels isolés et regrouper l'obstacle
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+        cv::morphologyEx(masqueMouvement, masqueMouvement, cv::MORPH_OPEN, kernel);
+
+        // 4. Échantillonnage d'une grille de points rouges sur les zones en mouvement
+        const int pasPoint = 8; // Un point rouge tous les 8 pixels sur les zones qui bougent
+        for (int y = 0; y < masqueMouvement.rows; y += pasPoint) {
+            const uchar* ligne = masqueMouvement.ptr<uchar>(y);
+            for (int x = 0; x < masqueMouvement.cols; x += pasPoint) {
+                if (ligne[x] > 0) {
+                    cv::Point pt(x, y);
+                    res.pointsMouvement.push_back(pt);
+                    // Tracé d'un point rouge vif (BGR : 0, 0, 255)
+                    cv::circle(affichageOut, pt, 3, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
+                }
+            }
+        }
+        res.nbPointsMouvement = static_cast<int>(res.pointsMouvement.size());
+    }
+
+    // Mise à jour de l'image t-1 pour le tour suivant
+    prevFrameGris_ = grisActuel.clone();
 }
