@@ -17,18 +17,17 @@ int main() {
     DetecteurAKAZE detecteur(0.001f);
     cv::Mat imageRef = cv::imread(cheminImage);
 
-    // Si une image existe déjà, on propose de la conserver ou d'appuyer sur 'c' pour recapturer
+    // si on a une image on peut recapturer (appuie sur C) /validation (autre touche)
     if (!imageRef.empty()) {
         std::cout << "[OK] Image existante trouvee : " << cheminImage << std::endl;
         cv::imshow("Image actuelle - [c] pour recapturer | [Autre touche] pour valider", imageRef);
         char choix = static_cast<char>(cv::waitKey(0));
         cv::destroyAllWindows();
         if (choix == 'c' || choix == 'C') {
-            imageRef.release(); // Vide l'image pour déclencher la capture webcam ci-dessous
+            imageRef.release(); 
         }
     }
 
-    // Si aucune référence n'est chargée (ou si l'utilisateur a appuyé sur 'c'), on ouvre la webcam
     if (imageRef.empty()) {
         cv::VideoCapture cap;
         if (!ouvrirCamera(cap, 0)) {
@@ -64,7 +63,7 @@ int main() {
         cv::destroyAllWindows();
     }
 
-    // Extraction des features et génération du fichier carte_features.yml
+    // on trouve les features et on save l'image de visu avec features  + fichier YML 
     cv::Mat imageVisu;
     if (detecteur.genererCarteReference(imageRef, fichierYml, imageVisu)) {
         std::cout << "[SUCCES] " << detecteur.getNbFeaturesCarte()
