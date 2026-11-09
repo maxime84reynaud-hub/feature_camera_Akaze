@@ -1,0 +1,13 @@
+# Dossier de compilation CMake 
+build/
+.vscode/
+
+# Exécutables et binaires
+*.exe
+*.obj
+*.o
+*.a
+
+# Optionnel : décommentez les 2 lignes suivantes si vous ne voulez PAS envoyer votre carte de test sur GitHub
+# reference.png
+# carte_features.yml
